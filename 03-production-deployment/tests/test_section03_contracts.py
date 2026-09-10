@@ -2,6 +2,7 @@ import ast
 import json
 import sys
 import tempfile
+import tomllib
 import unittest
 from types import SimpleNamespace
 from pathlib import Path
@@ -430,6 +431,24 @@ class Section03DeploymentContractTests(unittest.TestCase):
 
 
 class Section03NotebookContractTests(unittest.TestCase):
+    def test_runtime_mcp_dependency_stays_on_compatible_major(self):
+        runtime_requirements = {
+            line.strip()
+            for line in (SECTION_DIR / "agents" / "requirements.txt")
+            .read_text(encoding="utf-8")
+            .splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        }
+        self.assertIn("mcp>=1.0.0,<2.0.0", runtime_requirements)
+
+        project = tomllib.loads(
+            (SECTION_DIR.parent / "pyproject.toml").read_text(encoding="utf-8")
+        )
+        self.assertIn(
+            "mcp>=1.28.1,<2.0.0",
+            project["project"]["dependencies"],
+        )
+
     def test_notebooks_are_json_valid_and_code_cells_parse(self):
         for notebook_name in [
             "03a-ground-truth-dataset.ipynb",
