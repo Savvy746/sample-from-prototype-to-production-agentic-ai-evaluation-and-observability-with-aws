@@ -1,3 +1,5 @@
+import ast
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -160,6 +162,54 @@ class EvidenceContractTests(unittest.TestCase):
         with self.assertRaises(EvidenceContractError):
             validate_no_sensitive_values({"authorization": "Bearer abc"})
         validate_no_sensitive_values({"model_id": "global.anthropic.claude-sonnet-4-6"})
+
+    def test_online_evaluation_role_can_manage_spans_index_policy(self):
+        notebook = json.loads(
+            (SECTION_DIR / "04-online-evidence-and-feedback-loop.ipynb").read_text(
+                encoding="utf-8"
+            )
+        )
+        role_source = next(
+            "".join(cell["source"])
+            for cell in notebook["cells"]
+            if cell["cell_type"] == "code"
+            and "def create_or_update_evaluation_role" in "".join(cell["source"])
+        )
+        role_module = ast.parse(role_source)
+
+        index_statement = None
+        for node in ast.walk(role_module):
+            if not isinstance(node, ast.Dict):
+                continue
+            entries = {
+                key.value: value
+                for key, value in zip(node.keys, node.values)
+                if isinstance(key, ast.Constant) and isinstance(key.value, str)
+            }
+            sid = entries.get("Sid")
+            if isinstance(sid, ast.Constant) and sid.value == "CloudWatchLogsIndexAccess":
+                index_statement = entries
+                break
+
+        self.assertIsNotNone(index_statement)
+        actions = [
+            item.value
+            for item in index_statement["Action"].elts
+            if isinstance(item, ast.Constant)
+        ]
+        resources = [ast.unparse(item) for item in index_statement["Resource"].elts]
+
+        self.assertEqual(
+            actions,
+            ["logs:DescribeIndexPolicies", "logs:PutIndexPolicy"],
+        )
+        self.assertEqual(
+            resources,
+            [
+                "f'arn:aws:logs:{REGION}:{ACCOUNT_ID}:log-group:aws/spans'",
+                "f'arn:aws:logs:{REGION}:{ACCOUNT_ID}:log-group:aws/spans:*'",
+            ],
+        )
 
 
 if __name__ == "__main__":
